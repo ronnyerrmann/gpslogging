@@ -1,0 +1,1 @@
+rsync -uv -i ~/.ssh/<name private key> {0} <username>@<server>:<path>
