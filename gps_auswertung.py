@@ -8,7 +8,7 @@ import time, datetime
 import matplotlib.pyplot as plt
 import matplotlib.cm as cmaps
 #import matplotlib.colors as colors
-sys.path.append("/home/ronny/Documents/python/")        # path to srtm
+#sys.path.append("/home/ronny/Documents/python/")        # path to srtm; in case not installed through pip
 #import pexpect
 import srtm                     # see https://pypi.python.org/pypi/SRTM.py and https://github.com/tkrajina/srtm.py
 #import gpxpy                   # Doesn't work as hoped, see below
@@ -57,7 +57,7 @@ def sigma_clip(xarr, yarr, p_orders, sigma_l, sigma_h, repeats = 1):
     if xarr.shape[0] == 0 or yarr.shape[0] == 0:
         logger('Warn: empty array for sigma clipping')
         return np.array([]), np.repeat([0], p_orders)
-    elif xarr.shape[0] <> yarr.shape[0]:
+    elif xarr.shape[0] != yarr.shape[0]:
         logger('Warn: got different sized arrays for sigma clipping. This is a programming error and should not happen')
         return [], np.repeat([0], p_orders)
     goodvalues = (yarr*0 == 0)
@@ -84,12 +84,12 @@ if os.path.isfile(places_file):
             print("Sonderzeichen:",line[:-1])
         line=line[:-1].split('\t')
         if len(line) < 4:
-            print "Eintrag zu kurz:",line
+            print("Eintrag zu kurz:",line)
             exit(1)
         orte.append([float(line[3]),float(line[2]),float(line[1])/40000*2*np.pi])    # Breite, Länge, Radius[rad]
         orte_namen.append(line[0])      # Name Ort
     file.close
-    print "Orte eingelesen"
+    print("Orte eingelesen")
     
 #print('reading gpx data')
 orte = np.array(orte)
@@ -106,10 +106,10 @@ for gpxdat in sys.argv[1:]:
         gpxdat=gpxdat[:-1]
     temp=os.popen('ls '+gpxdat+'.gpx*').readlines()
     if len(temp)==0:
-        print "keine passende Datei:",gpxdat+'.gpx*'
+        print("keine passende Datei:",gpxdat+'.gpx*')
         exit(1)
     if len(temp)>1:
-        print "mehrere passende Dateien:",gpxdat+'.gpx*'
+        print("mehrere passende Dateien:",gpxdat+'.gpx*')
         exit(1)
     if temp[0].find('.gz')>0:
         os.system('gunzip '+temp[0])
@@ -163,7 +163,7 @@ for i in range(datens[0]):
     daten[i,12] = elevation_data.get_elevation(daten[i,2], daten[i,3])
 
 # Schlechte Hoehenmessung am Anfang aussortieren
-new_file = np.where(daten[1:,0] - daten[:-1,0] <> 0)[0]
+new_file = np.where(daten[1:,0] - daten[:-1,0] != 0)[0]
 for j in new_file:    #fuer jede gpx-Datei
     badvalues = np.where(abs(daten[j:j+paranzbeg,4]-daten[j+paranzbeg,4]) > parhoehbeg)[0]     # Hoehenunterschied am Beginn Datei zu groß
     daten[badvalues+j,4:8] = np.nan         # Hoehe, Dist, Hoehenunterschied, Geschw
@@ -177,7 +177,7 @@ dist = np.arccos(dist) *6378*1000   # Erdradius in m
 hoehdiff = daten[1:,4]-daten[:-1,4]
 med_dist = np.nanmedian(dist)
 # Cleaning zu viel Zeit, zu viel Entfernung, neue gpx datei
-new_dataset = np.where((daten[1:,1] - daten[:-1,1] > parneupfadzeit) | (dist > med_dist*parneupfaddist) | (daten[1:,0] - daten[:-1,0] <> 0) )[0]     # conditions conected by or
+new_dataset = np.where((daten[1:,1] - daten[:-1,1] > parneupfadzeit) | (dist > med_dist*parneupfaddist) | (daten[1:,0] - daten[:-1,0] != 0) )[0]     # conditions conected by or
 dist[new_dataset] = 0           #np.nan
 hoehdiff[new_dataset] = np.nan
 # Cleaning too big elevation steps
@@ -296,9 +296,9 @@ daten[:,13] = image_arr[x_arr, y_arr]                   # get the data from the 
 image_arr[x_arr, y_arr] = elev_range[1] + 0.1 * delev_range # replace the path with the brightest data
 
 
-print "Finished calculations, started plotting..."
+print("Finished calculations, started plotting...")
 
-if elev_range <> [-1, -1]:
+if elev_range != [-1, -1]:
     # Plotting the image with the path
     fontscale = 2.5
     title = 'STRM (elevation) map of tour'
@@ -380,7 +380,7 @@ plt.savefig(gpx_files[0]+'.pdf', bbox_inches='tight')
 plt.savefig(gpx_files[0]+'.png', bbox_inches='tight')
 plt.close()
 #print("\nMehrere PDFs zusammenfuegen: pdftk tour*.pdf cat output ziel.pdf\n")
-if pdf_viewer <> '':
+if pdf_viewer != '':
     os.system('{1} {0}.pdf &'.format(gpx_files[0], pdf_viewer))
 
 
@@ -407,7 +407,7 @@ if os.path.isfile(html_file):
                 file.write('    <td width="68%" align="left"><font size=-1><b>'+gpx_files[0]+'</b>'+ortschaften+'</font></td>\n')
                 # pdf, png, map.png
                 file.write('    <td width="6%" align="center"><font size=-1> <a href="{1}{0}.pdf">pdf</a>, <a href="{1}{0}.png">png</a</font></td>\n'.format(gpx_files[0], subfolder))
-                if elev_range <> [-1, -1]:
+                if elev_range != [-1, -1]:
                     file.write('    <td width="6%" align="center"><font size=-1> <a href="{1}{0}_map.png">map-png</a</font></td>\n'.format(gpx_files[0], subfolder))
                 else:                                               # if no SRTM data is available
                     file.write('    <td width="6%" align="center"><font size=-1> <a href="{1}{0}_map.png"></a</font></td>\n'.format(gpx_files[0], subfolder))
@@ -429,7 +429,7 @@ if os.path.isfile(html_file):
 ############# Hochladen auf Server
 
 if os.path.isfile(upload_data_command):
-    text='index.html Touren.kmz ../wichtigeProtokolle/fahrrad.ods {0}.pdf {0}.png {0}_map.png'.format(gpx_files[0])
+    text='index.html Touren.kmz ~/wichtigeProtokolle/fahrrad.ods {0}.pdf {0}.png {0}_map.png'.format(gpx_files[0])
     for j in gpx_files:
         text=text+' '+j+'.html '+j+'.gpx '+j+'.kml'
     
