@@ -13,6 +13,8 @@ import matplotlib.cm as cmaps
 import srtm                     # see https://pypi.python.org/pypi/SRTM.py and https://github.com/tkrajina/srtm.py
 #import gpxpy                   # Doesn't work as hoped, see below
 
+from typing import List
+
 # Reads one or several gpx files and creates a graph for elevation and speed in respect to time and distance.
 #  The gpx files need to be given as parameter when running the script
 # Also draws the track in an SRTM (elevation) map.
@@ -20,6 +22,7 @@ import srtm                     # see https://pypi.python.org/pypi/SRTM.py and h
 #   Needs to contain the following tab-separated values: City Name, Radius of the city, Longitude, Latitude
 # If a html file exists, then information can be added to that file
 #   Needs to contain the following line after the line the data will be added: <!--Daten zufuegen-->
+
 
 def convert_gpx_to_kml_html(newtype):
     for gpx_file in [file for file in os.listdir(".") if file.endswith(".gpx")]:
@@ -37,35 +40,20 @@ def convert_gpx_to_kml_html(newtype):
             print(f"{' ; '.join(cmds)} returned {return_codes}")
 
 
-if len(sys.argv)==1:
-    print("Start programm with parameter 'gpx-File'")
-    exit(1)
-
-exit_helper = False
-if "gpx2kml" in sys.argv:
-    exit_helper = True
-    convert_gpx_to_kml_html("kml")
-if "gpx2html" in sys.argv:      # This is just a html file with the coordinates and not like the file from BT747
-    exit_helper = True
-    convert_gpx_to_kml_html("html")
-if exit_helper:
-    exit()
-
-parneupfadzeit=600      # Nach soviel s annehmen, dass neuer Pfad beginnt
-parneupfaddist=5        # Nach sovielfach der median distanz zwischen 2 Datenpunkten, dass neuer Pfad beginnt
-paranzbeg=15    #Ueberpruefen so vieler Datenpunke
-parhoehbeg=30   #Höhendifferenzen zum Beginn größer als dieser herausschmeißen, da nach Einschalten noch zu ungenau
-sigma = 5               # Sigmaclipping for abs(elevation), local speed
-paranzhoeh=5            # Anzahl der Hoehen, über welche für Berechnung der Gesamthöhe gemittelt wird
-paranzdist=15           # Lokale Geschwindigkeit über wie viele Datenpunkte berechnen
-parrangeschw=[2,98]    #Min und Max zu plottende Geschwindigkeit in % aller lokalen Geschwindigkeiten
-
-pdf_viewer  = 'evince'#'okular'       # If empty the pdfs wo't be displayed
-places_file = 'gaw_orte.dat'        # If it doesn't exists, places won't be read
-html_file   = 'index.html'      # If it doesn't exists, than won't be processed
-upload_data_command = 'gaw_upload.dat'      # If it doesn't exists, than won't be processed. Contains the upload command with a wildcart {0}
-
-gradbog=np.pi/180
+def get_places(places_file):
+    orte, orte_namen = [], []
+    if os.path.isfile(places_file):
+        with open(places_file, 'r') as file:
+            for line in file:
+                line = line[:-1].split('\t')
+                if len(line) < 4:
+                    print("Eintrag zu kurz:",line)
+                    exit(1)
+                orte.append([float(line[3]), float(line[2]), float(line[1])/40000*2*np.pi])    # Breite, Länge, Radius[rad]
+                orte_namen.append(line[0])      # Name Ort
+        print("Orte eingelesen")
+        orte = np.array(orte)
+    return orte, orte_namen
 
 
 def sigma_clip(xarr, yarr, p_orders, sigma_l, sigma_h, repeats = 1):
@@ -76,7 +64,7 @@ def sigma_clip(xarr, yarr, p_orders, sigma_l, sigma_h, repeats = 1):
     :p_orders: orders of the polynomial
     :sigma_l: Data off by this sigma are rejected on the lower side of the fit
     :sigma_h: Data off by this sigma are rejected on the higher side of the fit
-    :repeats: redo the fit with the (cleaned) data how many times? 
+    :repeats: redo the fit with the (cleaned) data how many times?
     :return goodvalues: 1d array with True/False. The values which are inside the limits are True
     :return p: parameters of the last polynomial fit
     """
@@ -101,26 +89,55 @@ def sigma_clip(xarr, yarr, p_orders, sigma_l, sigma_h, repeats = 1):
     #plot_img_spec.plot_spectra(np.array([xarr,xarr]),np.array([yarr,np.polyval(poly, xarr)]),['data','fit'], ['savepaths'], True, [0.06,0.92,0.95,0.06, 1.0,1.01], 'line {0}'.format(i))
     return goodvalues, poly
 
+
+def add_to_index(gpx_files: List[str], ortschaften: str, subfolder: str, elev_range: List[float], html_file_exists: bool) -> str:
+    href = "".join([f' <a href="{gpx_file}{subfolder}.gpx">gpx</a>' for gpx_file in gpx_files]).strip()
+    gpx_fname = subfolder+gpx_files[0]
+    l = f'  <tr>\n' \
+        f'    <td width="68%" align="left"><b>{gpx_files[0]}</b>{ortschaften}</td>\n' \
+        f'    <td width="6%" align="center"><a href="{gpx_fname}.pdf">pdf</a>, <a href="{gpx_fname}.png">png</a></td>\n' \
+        f'    <td width="6%" align="center"><a href="{gpx_fname}_map.png">{"map-png" if elev_range != [-1, -1] else ""}</a></td>\n'
+    temp = href.replace("gpx.gz", "html").replace("gpx", "html")
+    l += f'    <td width="8%" align="center">{temp if html_file_exists else ""}</td>\n' \
+         f'    <td width="6%" align="center">{href}</td>\n' \
+         f'    <td width="6%" align="center">{href.replace("gpx", "kml")}</td>\n' \
+         f'  </tr>\n'
+    return l
+
+
+if len(sys.argv)==1:
+    print("Start programm with parameter 'gpx-File'")
+    exit(1)
+
+exit_helper = False
+if "gpx2kml" in sys.argv:
+    exit_helper = True
+    convert_gpx_to_kml_html("kml")
+if "gpx2html" in sys.argv:      # This is just a html file with the coordinates and not like the file from BT747
+    exit_helper = True
+    convert_gpx_to_kml_html("html")
+if exit_helper:
+    exit()
+
+parneupfadzeit = 600    # Nach soviel s annehmen, dass neuer Pfad beginnt
+parneupfaddist = 5      # Nach sovielfach der median distanz zwischen 2 Datenpunkten, dass neuer Pfad beginnt
+paranzbeg=15            # Ueberpruefen so vieler Datenpunke
+parhoehbeg=30           # Höhendifferenzen zum Beginn größer als dieser herausschmeißen, da nach Einschalten noch zu ungenau
+sigma = 5               # Sigmaclipping for abs(elevation), local speed
+mindist = 0.01           # Minimum distance in metres to use this value for statistics
+paranzhoeh = 25         # Anzahl der Hoehen, über welche für Berechnung der Gesamthöhe gemittelt wird (needs to be odd)
+paranzdist=15           # Lokale Geschwindigkeit über wie viele Datenpunkte berechnen
+parrangeschw=[2,98]     # Min und Max zu plottende Geschwindigkeit in % aller lokalen Geschwindigkeiten
+
+pdf_viewer = 'evince'#'okular'       # If empty the pdfs wo't be displayed
+places_file = 'gaw_orte.dat'        # If it doesn't exists, places won't be read
+html_file = 'index.html'      # If it doesn't exists, then won't be processed
+upload_data_command = 'gaw_upload.dat'      # If it doesn't exists, than won't be processed. Contains the upload command with a wildcart {0}
+
+gradbog=np.pi/180
+
 elevation_data = srtm.get_data()
 
-def get_places(places_file):
-    orte, orte_namen = [], []
-    if os.path.isfile(places_file):
-        file=open(places_file,'r')
-        for line in file:
-            if line.find('ä')>-1 or line.find('Ä')>-1 or line.find('ö')>-1 or line.find('Ö')>-1 or line.find('ü')>-1 or line.find('Ü')>-1 or line.find('ß')>-1:
-                print("Sonderzeichen:",line[:-1])
-            line=line[:-1].split('\t')
-            if len(line) < 4:
-                print("Eintrag zu kurz:",line)
-                exit(1)
-            orte.append([float(line[3]),float(line[2]),float(line[1])/40000*2*np.pi])    # Breite, Länge, Radius[rad]
-            orte_namen.append(line[0])      # Name Ort
-        file.close
-        print("Orte eingelesen")
-        orte = np.array(orte)
-    return orte, orte_namen
-    
 #print('reading gpx data')
 orte, orte_namen = get_places(places_file)
 
@@ -129,7 +146,11 @@ daten=[]        # index of filename (pos in gpx_files)
 neue_dat=[]     # remove
 html_file_exists = True
 kml_file_exists = True
-for gpxdat in sys.argv[1:]:
+offset_elevation = 0
+manual_offset = [arg for arg in sys.argv[1:] if arg.startswith("offset")]
+if manual_offset:
+    offset_elevation = float(manual_offset[-1].split("=")[-1])
+for gpxdat in [arg for arg in sys.argv[1:] if not arg.startswith("offset")]:
     ### schauen, ob Name richtig
     if gpxdat[-3:]==".gz":
         gpxdat=gpxdat[:-3]
@@ -169,7 +190,7 @@ for gpxdat in sys.argv[1:]:
             continue
         if line.find('<ele>')==0:    #Hoehe hinzufüegen
             line=line.split('</ele>')
-            new_data[4]=float(line[0][5:])
+            new_data[4]=float(line[0][5:]) + offset_elevation
         elif line.find('<time>')==0:    #Zeit hinzufügen
             line = line.split('</time>')
             line = line[0].split('<time>')
@@ -211,11 +232,17 @@ dist = np.sin(gradbog*daten[1:,2])*np.sin(gradbog*daten[:-1,2]) + np.cos(gradbog
 dist[dist > 1] = 1
 dist[dist < -1] = -1
 dist = np.arccos(dist) *6378*1000   # Erdradius in m
+print(f"Excluded because too small distance ({mindist}): {sum(dist < mindist)}")
+dist[dist < mindist] = np.nan       # Only use useful distances:
 # Elevetion difference
 hoehdiff = daten[1:,4]-daten[:-1,4]
 med_dist = np.nanmedian(dist)
 # Cleaning zu viel Zeit, zu viel Entfernung, neue gpx datei
-new_dataset = np.where((daten[1:,1] - daten[:-1,1] > parneupfadzeit) | (dist > med_dist*parneupfaddist) | (daten[1:,0] - daten[:-1,0] != 0) )[0]     # conditions conected by or
+new_dataset = np.where(
+    (daten[1:,1] - daten[:-1,1] > parneupfadzeit) |
+    (dist > med_dist*parneupfaddist) |
+    (daten[1:,0] - daten[:-1,0] != 0)
+)[0]     # conditions conected by or
 dist[new_dataset] = 0           #np.nan
 hoehdiff[new_dataset] = np.nan
 # Cleaning too big elevation steps
@@ -223,7 +250,7 @@ good_values, poly = sigma_clip(hoehdiff, np.abs(hoehdiff), 0, sigma, sigma, repe
 hoehdiff[~good_values] = np.nan
 good_values = np.insert(good_values, 0, False)
 daten[~good_values,4] = np.nan
-print('Excluded because of elevation: {0} of {1}'.format(len(daten[~good_values,4]), datens[0]))
+print('Excluded because of elevation scatter: {0} of {1}'.format(len(daten[~good_values,4]), datens[0]))
 # Hinzufuegen
 daten[1:,5] = dist
 daten[1:,6] = hoehdiff
@@ -362,10 +389,7 @@ if elev_range != [-1, -1]:
 daten[:,5] = np.nancumsum(daten[:,5])/1000               # Distance to this point
 distance = [np.nanmin(daten[:,5]), np.nanmax(daten[:,5]), np.nanmax(daten[:,5])-np.nanmin(daten[:,5]) ] # min, max, dx
 timedelta = daten[-1,1] - daten[0,1]
-if timedelta > 86460:                   # More than one day
-    timestr = "%d days, %H:%M"
-else:
-    timestr = "%H:%M"
+timestr = "%d days, %H:%M" if timedelta > 86460 else "%H:%M"    # check if more than one day
 legende = 'Total: Elevation up: {0} m, Elevation down: {1} m,\nDistance: {2} km,\nTime: {3}, Time moving: {4}'
 legende = legende.format(int(hoehe[0]), int(hoehe[1]), round(distance[1],2),
                         time.strftime(timestr, time.gmtime(timedelta)), time.strftime("%H:%M", time.gmtime(np.nansum(times))) )
@@ -419,48 +443,25 @@ plt.savefig(gpx_files[0]+'.pdf', bbox_inches='tight')
 plt.savefig(gpx_files[0]+'.png', bbox_inches='tight')
 plt.close()
 #print("\nMehrere PDFs zusammenfuegen: pdftk tour*.pdf cat output ziel.pdf\n")
-if pdf_viewer != '':
-    os.system('{1} {0}.pdf &'.format(gpx_files[0], pdf_viewer))
+if pdf_viewer != "":
+    os.system(f"{pdf_viewer} {gpx_files[0]}.pdf &")
 else:
     print("Finished")
 
 ############# Einbinden in html-Datei
-subfolder = ''              # can be a folder or a complete address, e.g. http://h2324143.stratoserver.net/~ronnyabroad/gps/
+subfolder = ""              # can be a folder or a complete address, e.g. http://h2324143.stratoserver.net/~ronnyabroad/gps/
 if os.path.isfile(html_file):
-    html=[]
-    adden=1
-    file=open(html_file,'r')
-    for line in file:
-        html.append(line)
-        if line.find(gpx_files[0])>0:       # only add the file, if it's not already in the html table
-            adden=0
-    file.close()
-    if adden==1:
-        href=''
-        for i in gpx_files:
-            href=href+' <a href="{1}{0}.gpx">gpx</a>'.format(i, subfolder)
-        file=open('index.html','w')
-        for line in html:
-            if line.find('<!--Daten zufuegen-->')>-1:
-                file.write('  <tr>\n')
-                # name:
-                file.write('    <td width="68%" align="left"><font size=-1><b>'+gpx_files[0]+'</b>'+ortschaften+'</font></td>\n')
-                # pdf, png, map.png
-                file.write('    <td width="6%" align="center"><font size=-1> <a href="{1}{0}.pdf">pdf</a>, <a href="{1}{0}.png">png</a</font></td>\n'.format(gpx_files[0], subfolder))
-                if elev_range != [-1, -1]:
-                    file.write('    <td width="6%" align="center"><font size=-1> <a href="{1}{0}_map.png">map-png</a</font></td>\n'.format(gpx_files[0], subfolder))
-                else:                                               # if no SRTM data is available
-                    file.write('    <td width="6%" align="center"><font size=-1> <a href="{1}{0}_map.png"></a</font></td>\n'.format(gpx_files[0], subfolder))
-                # html: 
-                temp = href.replace('gpx.gz','html').replace('gpx','html')
-                file.write(f'    <td width="8%" align="center"><font size=-1>{temp if html_file_exists else ""}</font></td>\n')
-                # gpx:
-                file.write('    <td width="6%" align="center"><font size=-1>'+href+'</font></td>\n')
-                # kml:
-                file.write('    <td width="6%" align="center"><font size=-1>' + href.replace('gpx','kml') + '</font></td>\n')
-                file.write('  </tr>\n')
-            file.write(line)
-        file.close()
+    with open(html_file, "r") as file:
+        html = file.readlines()
+    for line in html:
+        if line.find(gpx_files[0]) > 0:
+            break
+    else:
+        with open("index.html", "w") as file:
+            for line in html:
+                if line.find("<!--Daten zufuegen-->")>-1:
+                    file.write(add_to_index(gpx_files, ortschaften, subfolder, elev_range, html_file_exists))
+                file.write(line)
         print("updated index.html")
 #for i in gpx_files:
     #os.system('sed -i \'s/amp" type=/amp;key=ABQIAAAA73cUYNc6rT4y9mjKEclHShSBM92zzWw9S0fp7QW1vjI8ZfmM0BS9Ga50GiYD85Iw7G50vAEIH2ow_w" type=/g\' '+ i+'.html')
@@ -470,21 +471,25 @@ if os.path.isfile(html_file):
 
 if os.path.isfile(upload_data_command):
     text='index.html Touren.kmz ~/wichtigeProtokolle/fahrrad.ods {0}.pdf {0}.png {0}_map.png'.format(gpx_files[0])
-    for j in gpx_files:
-        text=text+' '+j+'.html '+j+'.gpx '+j+'.kml'
+    endings = ["gpx", "html", "kml"]
+    for gpx_file in gpx_files:
+        for ending in endings:
+            fname = f"{gpx_file}.{ending}"
+            if os.path.isfile(fname):
+                text += f" {fname}"
     
-    scp_commands = open(upload_data_command,'r').readlines()
+    scp_commands = open(upload_data_command,"r").readlines()
     for scp_command in scp_commands:
         if len(scp_command) < 5:
             continue
-        print('Copying data')
+        print("Copying data")
         scp_command = scp_command[:-1].format(text)      # without \n but with replaced text
         #print scp_command
         scp = os.system(scp_command)
         if scp > 0:
             print("Probleme mit scp, Exitstatus: {0}\n\nIf necessary rerun\n {1}".format(scp, scp_command))
         else:
-            print('Finished this data transfer')
+            print("Finished this data transfer")
 
 
 
